@@ -42,7 +42,7 @@ def model_lookup(beam, root_dir=''):
     Find appropriate beam model from Gaussian regression method.
     For now, does not search as a function of time.
     """
-    model = root_dir + '{:02}_gp_avg_orig.fits'.format(beam)
+    model = root_dir + '/{:02}_gp_avg_orig.fits'.format(beam)
     return model
 
 
