@@ -65,7 +65,7 @@ def pb_weight(ra, dec, pointing, cube, pb_root_dir=''):
                     hdulist_pb[0].header['CDELT2'] * get_cb_model_freq().to(u.Hz) / cube_freq).value
 
         x, y = WCS(hdulist_pb[0].header).world_to_pixel(SkyCoord(ra, dec, unit='deg'))
-        pb_weights.append(hdulist_pb[0].data[int(y[0]), int(x[0])])
+        pb_weights.append(hdulist_pb[0].data[int(y), int(x)])
 
     return np.array(pb_weights)
 
@@ -74,7 +74,7 @@ def get_psf_per_chan(source, im_cube):
 
     psf_hdu = fits.open(im_cube)
     if len(psf_hdu[1].data) == len(psf_hdu[0].data[:,0,0]):
-        psf_chans = psf_hdu[1].data[source['z_min'][0]:source['z_max'][0]+1]
+        psf_chans = psf_hdu[1].data[source['z_min']:source['z_max']+1]
     else:
         psf_chans = None
         print("Need better chan code for {}".format(im_cube))
@@ -175,13 +175,7 @@ if __name__ == '__main__':
     args = parse_args()
 
     catalog_file = args.catalog_file
-    # cat = Table.read(catalog_file, format='ascii', header_start=18)
-
-    # Konstantin's sources
-    cat = Table.read(catalog_file, format='ascii', header_start=0)
-    cat.rename_column('RADet','ra')
-    cat.rename_column('DecDet','dec')
-    cat.rename_column('DetectionName', 'name')
+    cat = Table.read(catalog_file, format='ascii', header_start=18)
 
     out_catalog = []
     i = 0
@@ -189,28 +183,16 @@ if __name__ == '__main__':
 
     # for s in cat[391:395]:
     for s in cat:
-        psf={'name':s['name']}
-        # field = catalog_file.split('/')[0].split('_')[-1]
+        psf_dict={'name':s['name']}
+        field = catalog_file.split('/')[0].split('_')[-1]
 
-        #######
-        # # For Konstantin
-        # if s['name'] not in check:
-        field = s['name'].split('_')[0]
-        id_num = s['name'].split('_')[1]
-        new_cat = Table.read('mos_{0}/{0}_HIcube{1}_clean_image_cat.txt'.format(field, args.cube), format='ascii', header_start=18)
-        s_new = Table(s)
-        s_new['z_min'] = int(new_cat['z_min'][new_cat['id']==int(id_num)][0])
-        s_new['z_max'] = int(new_cat['z_max'][new_cat['id']==int(id_num)][0])
-        #######
-
-        # psf_nearest, psf_weighted, psf_field_median, forgotten_fields = main(s, field, args.cube, pb_root_dir=args.pb_root_dir)
-        psf_nearest, psf_weighted, psf_field_median, forgotten_beams, psf_3nearest= main(s_new, field, args.cube, pb_root_dir=args.pb_root_dir)
+        psf_nearest, psf_weighted, psf_field_median, forgotten_beams, psf_3nearest= main(s, field, args.cube, pb_root_dir=args.pb_root_dir)
         if psf_nearest != None:
-            psf.update(psf_nearest)
-            psf.update(psf_weighted)
-            psf.update(psf_field_median)
-            psf.update(psf_3nearest)
-            out_catalog.append(psf)
+            psf_dict.update(psf_nearest)
+            psf_dict.update(psf_weighted)
+            psf_dict.update(psf_field_median)
+            psf_dict.update(psf_3nearest)
+            out_catalog.append(psf_dict)
         if len(forgotten_beams) > 0:
             forgotten_beams_all.append(forgotten_beams)
         i += 1
