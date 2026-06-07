@@ -92,17 +92,7 @@ def get_psf_per_field(field, cube):
     return psf
 
 
-def main(source, field, cube, pb_root_dir=''):
-
-    package_dir = os.path.dirname(__file__)
-
-    pointings = Table.read(package_dir + '/../data/pointings.dat', format='ascii.basic', delimiter=' ')
-    pointings.rename_column('0taskID','taskID')
-    obscensus = Table.read(package_dir + '/../data/obscensus.csv', comment='#')
-
-    obs = obscensus[obscensus['name'] == field]
-    ptgs = join(obs, pointings, keys='taskID', join_type='left')
-    ptgs = unique(ptgs, keys=['name','beam'])
+def main(source, field, cube, ptgs, pb_root_dir=''):
     
     fac = np.cos(source['dec'] * np.pi / 180.0)
     dist = np.sqrt((source['ra'] - ptgs['RA'])**2 * fac * fac + (source['dec'] - ptgs['Dec'])**2)
@@ -173,9 +163,20 @@ def main(source, field, cube, pb_root_dir=''):
 
 if __name__ == '__main__':
     args = parse_args()
+    package_dir = os.path.dirname(__file__)
 
+    cube = args.cube
     catalog_file = args.catalog_file
+    field = catalog_file.split('/')[-1].split('_')[0] 
     cat = Table.read(catalog_file, format='ascii', header_start=18)
+
+    pointings = Table.read(package_dir + '/../data/pointings.dat', format='ascii.basic', delimiter=' ')
+    pointings.rename_column('0taskID','taskID')
+    obscensus = Table.read(package_dir + '/../data/obscensus.csv', comment='#')
+
+    obs = obscensus[obscensus['name'] == field]
+    ptgs = join(obs, pointings, keys='taskID', join_type='left')
+    ptgs = unique(ptgs, keys=['name','beam'])
 
     out_catalog = []
     i = 0
@@ -186,7 +187,7 @@ if __name__ == '__main__':
         psf_dict={'name':s['name']}
         field = catalog_file.split('/')[0].split('_')[-1]
 
-        psf_nearest, psf_weighted, psf_field_median, forgotten_beams, psf_3nearest= main(s, field, args.cube, pb_root_dir=args.pb_root_dir)
+        psf_nearest, psf_weighted, psf_field_median, forgotten_beams, psf_3nearest= main(s, field, cube, ptgs, pb_root_dir=args.pb_root_dir)
         if psf_nearest != None:
             psf_dict.update(psf_nearest)
             psf_dict.update(psf_weighted)
