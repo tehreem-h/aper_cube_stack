@@ -83,15 +83,15 @@ def get_psf_per_chan(source, im_cube):
         psf_chans = psf_hdu[1].data[z1:z2+1]
     else:
         psf_chans = None
-        print("Need better chan code for {}".format(im_cube))
+        print("[BEAM2SOURCE] Need better chan code for {}".format(im_cube))
     psf_hdu.close()
 
     return psf_chans
 
 
-def get_psf_per_field(field, cube):
+def get_psf_per_field(filename):
 
-    filename = 'mos_{0}/{0}_HIcube{1}_clean_image.fits'.format(field, cube)
+    # filename = 'mos_{0}/{0}_HIcube{1}_clean_image.fits'.format(field, cube)
     hdr = fits.getheader(filename)
     psf = {'bmaj_field':hdr['BMAJ'], 'bmin_field':hdr['BMIN'], 'bpa_field':hdr['BPA']}
 
@@ -119,7 +119,10 @@ def main(source, field, cube, ptgs, catalog_file, data_dir='', pb_root_dir=''):
         dist2 = dist[pb_values > 0.25*pb_values[0]]
         pb_values = pb_values[pb_values > 0.25*pb_values[0]]
 
-        psf_cubes = [data_dir + '/' + field + '/HI_B0{:02}_cube{}_spline_clean_image.fits'.format(b, cube) for b in ptgs2['beam']]
+        end_name = 'image.fits'
+        if 'smooth' in catalog_file:
+            end_name = 'smooth_image.fits'
+        psf_cubes = [data_dir + '/' + field + '/HI_B0{:02}_cube{}_spline_clean_{}'.format(b, cube, end_name) for b in ptgs2['beam']]
 
         for i in range(len(psf_cubes)-1, -1, -1):
             if not os.path.isfile(psf_cubes[i]):
@@ -146,7 +149,7 @@ def main(source, field, cube, ptgs, catalog_file, data_dir='', pb_root_dir=''):
         med_bpa_w = np.median(bpa_w_arr)
         psf_weighted = {'beams':','.join(str(x) for x in ptgs2['beam']),'weights':','.join(str(x) for x in pb_values),
                         'bmaj_wghtd':med_bmaj_w, 'bmin_wghtd':med_bmin_w, 'bpa_wghtd':med_bpa_w}
-        psf_field_median = get_psf_per_field(field, cube)
+        psf_field_median = get_psf_per_field('mos_{0}/{0}_HIcube{1}_clean_{2}'.format(field, cube, end_name))
         
         # Also include the three nearest beams
         b=0
@@ -186,7 +189,7 @@ def main(source, field, cube, ptgs, catalog_file, data_dir='', pb_root_dir=''):
             hdu.close()
 
     else:
-        print('This position has not been observed: {}'.format(source['name'][0]))
+        print('[BEAM2SOURCE] This position has not been observed: {}'.format(source['name'][0]))
         forgotten_beams.append([source['name'][0], 'This position has not been observed', 99])
         psf_nearest = None
         psf_weighted = None
@@ -241,9 +244,9 @@ if __name__ == '__main__':
     tab_forgotten = Table(forgotten_beams_all,names=['name','forgotten_psf','psf_rank'])
     if len(forgotten_beams_all) > 0:
         tab_forgotten.write(out_name, format='ascii.fixed_width', delimiter=' ', overwrite=True)
-        print("\tSaved 'forgotten' beams table to {}".format(out_name))
+        print("[BEAM2SOURCE] Saved 'forgotten' beams table to {}".format(out_name))
 
     out_table = Table(out_catalog)
     out_name = str(args.catalog_file)[:-4]+'_beams.txt'
     out_table.write(out_name, format='ascii.fixed_width', delimiter=' ', overwrite=True)
-    print("\tSaved output table to {}".format(out_name))
+    print("[BEAM2SOURCE] Saved output table to {}".format(out_name))
