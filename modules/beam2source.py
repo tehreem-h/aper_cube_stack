@@ -26,6 +26,9 @@ def parse_args():
     parser.add_argument('-c', '--cube', default='2', type=int,
                         help='Specify the cubes on which to do source finding (default: %(default)s).')
 
+    parser.add_argument('-d', '--data_dir', default='',
+                        help='Specify the data directory where the data are located (default: %(default)s).')
+
     parser.add_argument('-p', '--pb_root_dir', default=None,
                         help='Specify the root directory where the primary beam models are located (default: %(default)s).')
 
@@ -73,8 +76,11 @@ def pb_weight(ra, dec, pointing, cube, pb_root_dir=''):
 def get_psf_per_chan(source, im_cube):
 
     psf_hdu = fits.open(im_cube)
-    if len(psf_hdu[1].data) == len(psf_hdu[0].data[:,0,0]):
-        psf_chans = psf_hdu[1].data[source['z_min']:source['z_max']+1]
+    if len(psf_hdu[1].data) == len(psf_hdu[0].data[:, 0, 0]):
+        # Assumes the margin of the cubelets is always 10 from SoFiA!!
+        z1 = np.max([0, source['z_min']-10])
+        z2 = np.min([source['z_max']+10, z1+len(psf_hdu[1].data)])
+        psf_chans = psf_hdu[1].data[z1:z2+1]
     else:
         psf_chans = None
         print("Need better chan code for {}".format(im_cube))
@@ -92,8 +98,7 @@ def get_psf_per_field(field, cube):
     return psf
 
 
-def main(source, field, cube, ptgs, pb_root_dir=''):
-    
+def main(source, field, cube, ptgs, catalog_file, data_dir='', pb_root_dir=''):
     fac = np.cos(source['dec'] * np.pi / 180.0)
     dist = np.sqrt((source['ra'] - ptgs['RA'])**2 * fac * fac + (source['dec'] - ptgs['Dec'])**2)
 
@@ -114,7 +119,7 @@ def main(source, field, cube, ptgs, pb_root_dir=''):
         dist2 = dist[pb_values > 0.25*pb_values[0]]
         pb_values = pb_values[pb_values > 0.25*pb_values[0]]
 
-        psf_cubes = [field + '/HI_B0{:02}_cube{}_spline_clean_image.fits'.format(b, cube) for b in ptgs2['beam']]
+        psf_cubes = [data_dir + '/' + field + '/HI_B0{:02}_cube{}_spline_clean_image.fits'.format(b, cube) for b in ptgs2['beam']]
 
         for i in range(len(psf_cubes)-1, -1, -1):
             if not os.path.isfile(psf_cubes[i]):
@@ -124,14 +129,23 @@ def main(source, field, cube, ptgs, pb_root_dir=''):
                 pb_values = np.delete(pb_values, i)
 
         psf_per_chan = [get_psf_per_chan(source, p) for p in psf_cubes]
+        # Assumes the margin of the cubelets is always 10 from SoFiA!!
+        cube_zmin = np.max([0, source['z_min']-10])
+        chan = np.arange(cube_zmin, cube_zmin+len(psf_per_chan[0]), 1)
 
         psf_nearest = {'beam':ptgs2[0]['beam'],'bmaj_med':np.median(psf_per_chan[0]['BMAJ']), 'bmin_med':np.median(psf_per_chan[0]['BMIN']), 
                     'bpa_med':np.median(psf_per_chan[0]['BPA'])}
-        bmaj_w = np.sum([np.median(psf_per_chan[i]['BMAJ'])*pb_values[i] for i in range(len(psf_per_chan))]) / np.sum(pb_values)
-        bmin_w = np.sum([np.median(psf_per_chan[i]['BMIN'])*pb_values[i] for i in range(len(psf_per_chan))]) / np.sum(pb_values)
-        bpa_w = np.sum([np.median(psf_per_chan[i]['BPA'])*pb_values[i] for i in range(len(psf_per_chan))]) / np.sum(pb_values)
-        psf_weighted ={'beams':','.join(str(x) for x in ptgs2['beam']),'weights':','.join(str(x) for x in pb_values),
-                    'bmaj_wghtd':bmaj_w, 'bmin_wghtd':bmin_w, 'bpa_wghtd':bpa_w}
+        bmaj_w = [psf_per_chan[i]['BMAJ']*pb_values[i] for i in range(len(psf_per_chan))]
+        bmin_w = [psf_per_chan[i]['BMIN']*pb_values[i] for i in range(len(psf_per_chan))]
+        bpa_w = [psf_per_chan[i]['BPA']*pb_values[i] for i in range(len(psf_per_chan))]
+        bmaj_w_arr = np.sum(bmaj_w, axis=0) / np.sum(pb_values)
+        bmin_w_arr = np.sum(bmin_w, axis=0) / np.sum(pb_values)
+        bpa_w_arr = np.sum(bpa_w, axis=0) / np.sum(pb_values)
+        med_bmaj_w = np.median(bmaj_w_arr)
+        med_bmin_w = np.median(bmin_w_arr)
+        med_bpa_w = np.median(bpa_w_arr)
+        psf_weighted = {'beams':','.join(str(x) for x in ptgs2['beam']),'weights':','.join(str(x) for x in pb_values),
+                        'bmaj_wghtd':med_bmaj_w, 'bmin_wghtd':med_bmin_w, 'bpa_wghtd':med_bpa_w}
         psf_field_median = get_psf_per_field(field, cube)
         
         # Also include the three nearest beams
@@ -148,6 +162,28 @@ def main(source, field, cube, ptgs, pb_root_dir=''):
             b += 1
         psf_three_nearest = {'bmajs':','.join("{:.7f}".format(x) for x in bmajs), 'bmins':','.join("{:.7f}".format(x) for x in bmins), 
                              'bpas':','.join("{:.7f}".format(x) for x in bpas)}
+
+        # Update beam information in the appropriate source FITS files/cubelets
+        files = ['cube', 'chan', 'mom0', 'mom1', 'mom2', 'snr']
+        for f in files:
+            filename = catalog_file.split('_cat.txt')[0] + '_cubelets/' + catalog_file.split('_cat.txt')[0].split('/')[-1] + '_' + \
+                       str(source['id']) + '_' + f + '.fits'
+            hdu = fits.open(filename, mode='update')
+            hdu[0].header['BMAJ'] = med_bmaj_w
+            hdu[0].header['BMIN'] = med_bmin_w
+            hdu[0].header['BPA'] = med_bpa_w
+            if f == 'cube':
+                print("[BEAM2SOURCE] Adding channel clean beam properties to BEAMS extension table {}".format(filename))
+                col1 = fits.Column(name='BMAJ', format='1E', unit='deg', array=bmaj_w_arr)
+                col2 = fits.Column(name='BMIN', format='1E', unit='deg', array=bmin_w_arr)
+                col3 = fits.Column(name='BPA', format='1E', unit='deg', array=bpa_w_arr)
+                col4 = fits.Column(name='CHAN', format='1J', array=chan)
+                beam_hdu = fits.BinTableHDU.from_columns([col1, col2, col3, col4])
+                beam_hdu.name = 'BEAMS'
+                beam_hdu.header.comments['NAXIS2'] = 'number of channels'
+                hdu.append(beam_hdu)
+            hdu.flush()
+            hdu.close()
 
     else:
         print('This position has not been observed: {}'.format(source['name'][0]))
@@ -187,7 +223,9 @@ if __name__ == '__main__':
         psf_dict={'name':s['name']}
         field = catalog_file.split('/')[0].split('_')[-1]
 
-        psf_nearest, psf_weighted, psf_field_median, forgotten_beams, psf_3nearest= main(s, field, cube, ptgs, pb_root_dir=args.pb_root_dir)
+        psf_nearest, psf_weighted, psf_field_median, forgotten_beams, psf_3nearest = main(s, field, cube, ptgs, catalog_file, \
+                                                                                          data_dir=args.data_dir, \
+                                                                                          pb_root_dir=args.pb_root_dir)
         if psf_nearest != None:
             psf_dict.update(psf_nearest)
             psf_dict.update(psf_weighted)
