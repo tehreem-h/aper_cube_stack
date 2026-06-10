@@ -149,7 +149,7 @@ def main(source, field, cube, ptgs, catalog_file, data_dir='', pb_root_dir=''):
         med_bpa_w = np.median(bpa_w_arr)
         psf_weighted = {'beams':','.join(str(x) for x in ptgs2['beam']),'weights':','.join(str(x) for x in pb_values),
                         'bmaj_wghtd':med_bmaj_w, 'bmin_wghtd':med_bmin_w, 'bpa_wghtd':med_bpa_w}
-        psf_field_median = get_psf_per_field('mos_{0}/{0}_HIcube{1}_clean_{2}'.format(field, cube, end_name))
+        psf_field_median = get_psf_per_field(data_dir+'/mos_{0}/{0}_HIcube{1}_clean_{2}'.format(field, cube, end_name))
         
         # Also include the three nearest beams
         b=0
@@ -224,7 +224,7 @@ if __name__ == '__main__':
     # for s in cat[391:395]:
     for s in cat:
         psf_dict={'name':s['name']}
-        field = catalog_file.split('/')[0].split('_')[-1]
+        field = catalog_file.split('/')[-1].split('_')[0]
 
         psf_nearest, psf_weighted, psf_field_median, forgotten_beams, psf_3nearest = main(s, field, cube, ptgs, catalog_file, \
                                                                                           data_dir=args.data_dir, \
